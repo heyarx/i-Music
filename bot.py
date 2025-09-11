@@ -19,13 +19,12 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 DOWNLOAD_FOLDER = "downloads/"
 COOKIES_FILE = os.getenv("COOKIES_FILE", "cookiex.txt")  # fallback
 
-# Ensure downloads folder exists
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
 app = FastAPI()
 user_state = {}
-last_status_msg = {}  # track last loading message per user
+last_status_msg = {}
 
 languages = [
     "English","Hindi","Spanish","French","German","Italian","Japanese",
@@ -54,7 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if i % 3 == 0:
             keyboard.append(row)
             row = []
-        await asyncio.sleep(0.05)  # small animation effect
+        await asyncio.sleep(0.05)
         await msg.edit_text(f"🎵 Loading languages... {i}/{len(languages)}")
     if row:
         keyboard.append(row)
@@ -106,7 +105,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please start with /start first!")
         return
 
-    # Delete previous status message
     if user_id in last_status_msg:
         try:
             await last_status_msg[user_id].delete()
@@ -117,7 +115,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     song_name = update.message.text
     fmt = user_state[user_id]["format"].lower()
 
-    # Send new status message
     status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
     last_status_msg[user_id] = status_msg
 
@@ -139,8 +136,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if os.path.exists(COOKIES_FILE):
         ydl_opts["cookiefile"] = COOKIES_FILE
-    else:
-        await update.message.reply_text(f"⚠️ Cookies file not found at '{COOKIES_FILE}'.")
 
     loop = asyncio.get_event_loop()
     file_path = None
@@ -177,13 +172,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if file_path and os.path.exists(file_path):
         if fmt == "audio":
-            # Send playable MP3 audio
             await update.message.reply_audio(
                 audio=InputFile(file_path),
                 title=song_name
             )
         else:
-            # Send video file
             await update.message.reply_document(InputFile(file_path))
         os.remove(file_path)
     else:

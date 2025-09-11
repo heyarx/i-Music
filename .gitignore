@@ -13,10 +13,10 @@ env/
 *.tmp
 *.bak
 
-# Downloads folder (keep local files out of Git)
+# Downloads folder
 downloads/
 
-# Cookies file (keep secret)
+# Cookies file
 cookiex.txt
 
 # Environment variables
@@ -26,5 +26,5 @@ cookiex.txt
 .DS_Store
 Thumbs.db
 
-# VSCode settings (optional)
+# VSCode settings
 .vscode/
