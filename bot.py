@@ -1,13 +1,14 @@
 import os
 import asyncio
+import yt_dlp
 from fastapi import FastAPI, Request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-import yt_dlp
+from telegram.constants import ChatAction
 
 # ---------------- CONFIG ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # e.g., https://your-app.onrender.com/webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://i-music.onrender.com/webhook
 DOWNLOAD_FOLDER = "downloads/"
 
 if not os.path.exists(DOWNLOAD_FOLDER):
@@ -16,7 +17,7 @@ if not os.path.exists(DOWNLOAD_FOLDER):
 app = FastAPI()
 user_state = {}  # track user selections
 
-# 21 Languages example
+# 21 Languages
 languages = ["English","Hindi","Spanish","French","German","Italian","Japanese",
              "Korean","Chinese","Portuguese","Russian","Arabic","Bengali","Turkish",
              "Vietnamese","Thai","Malay","Swahili","Dutch","Greek","Hebrew"]
@@ -53,7 +54,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     song_name = update.message.text
     fmt = user_state[user_id]["format"].lower()  # audio or video
 
-    await update.message.reply_text(f"Downloading {song_name} as {fmt}... 🎧")
+    # Initial message
+    status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
 
     # ---------------- YT_DLP ----------------
     ydl_opts = {
@@ -72,8 +74,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             info = ydl.extract_info(f"ytsearch1:{song_name}", download=True)
             file_path = ydl.prepare_filename(info['entries'][0] if 'entries' in info else info)
 
-    await loop.run_in_executor(None, download)
+    # ---------------- Typing + Progress Simulation ----------------
+    async def typing_animation():
+        dots = 0
+        while not download_task.done():
+            await context.bot.send_chat_action(chat_id=update.message.chat_id, action=ChatAction.TYPING)
+            dots = (dots + 1) % 4
+            await status_msg.edit_text(f"Downloading '{song_name}' as {fmt}... {'•'*dots}")
+            await asyncio.sleep(1)
 
+    download_task = loop.run_in_executor(None, download)
+    animation_task = asyncio.create_task(typing_animation())
+    await download_task
+    animation_task.cancel()  # stop typing animation
+
+    # ---------------- Send File ----------------
     if file_path and os.path.exists(file_path):
         await update.message.reply_document(InputFile(file_path))
         os.remove(file_path)
