@@ -1,27 +1,30 @@
-# Python cache
+# Python cache and bytecode
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
 
-# Environment / virtualenv
+# Virtual environments
 .venv/
-env/
 venv/
-*.env
+env/
 
-# IDE / editor settings
-.vscode/
-.idea/
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
 
-# OS files
+# Downloads folder (keep local files out of Git)
+downloads/
+
+# Cookies file (keep secret)
+cookiex.txt
+
+# Environment variables
+.env
+
+# OS-specific files
 .DS_Store
 Thumbs.db
 
-# Downloads / temporary files
-downloads/
-cookies/
-
-# Logs
-*.log
-cookies.txt
+# VSCode settings (optional)
+.vscode/

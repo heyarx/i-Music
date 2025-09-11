@@ -25,15 +25,13 @@ if not os.path.exists(DOWNLOAD_FOLDER):
 
 app = FastAPI()
 user_state = {}
-last_status_msg = {}  # Track last status message per user
+last_status_msg = {}  # track last loading message per user
 
 languages = [
     "English","Hindi","Spanish","French","German","Italian","Japanese",
     "Korean","Chinese","Portuguese","Russian","Arabic","Bengali","Turkish",
     "Vietnamese","Thai","Malay","Swahili","Dutch","Greek","Hebrew"
 ]
-
-formats = ["Audio","Video"]
 
 language_flags = {
     "English": "🇬🇧", "Hindi": "🇮🇳", "Spanish": "🇪🇸", "French": "🇫🇷",
@@ -42,6 +40,8 @@ language_flags = {
     "Bengali": "🇧🇩", "Turkish": "🇹🇷", "Vietnamese": "🇻🇳", "Thai": "🇹🇭",
     "Malay": "🇲🇾", "Swahili": "🇰🇪", "Dutch": "🇳🇱", "Greek": "🇬🇷", "Hebrew": "🇮🇱"
 }
+
+formats = ["Audio","Video"]
 
 # ---------------- START ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,7 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if i % 3 == 0:
             keyboard.append(row)
             row = []
-        await asyncio.sleep(0.05)  # Animated effect
+        await asyncio.sleep(0.05)  # small animation effect
         await msg.edit_text(f"🎵 Loading languages... {i}/{len(languages)}")
     if row:
         keyboard.append(row)
@@ -106,7 +106,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please start with /start first!")
         return
 
-    # Delete previous status message if exists
+    # Delete previous status message
     if user_id in last_status_msg:
         try:
             await last_status_msg[user_id].delete()
@@ -119,7 +119,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Send new status message
     status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
-    last_status_msg[user_id] = status_msg  # Track it
+    last_status_msg[user_id] = status_msg
 
     ydl_opts = {
         "format": "bestaudio/best" if fmt=="audio" else "bestvideo+bestaudio",
@@ -152,7 +152,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 info = ydl.extract_info(f"ytsearch1:{song_name}", download=True)
                 file_path = ydl.prepare_filename(info['entries'][0] if 'entries' in info else info)
                 if fmt=="audio":
-                    file_path = os.path.splitext(file_path)[0]+".mp3"
+                    file_path = os.path.splitext(file_path)[0] + ".mp3"
         except Exception as e:
             print(f"Download error: {e}")
 
@@ -169,7 +169,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await download_task
     animation_task.cancel()
 
-    # Remove status message after sending file
     try:
         await status_msg.delete()
         last_status_msg.pop(user_id, None)
@@ -177,7 +176,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pass
 
     if file_path and os.path.exists(file_path):
-        await update.message.reply_document(InputFile(file_path))
+        if fmt == "audio":
+            # Send playable MP3 audio
+            await update.message.reply_audio(
+                audio=InputFile(file_path),
+                title=song_name
+            )
+        else:
+            # Send video file
+            await update.message.reply_document(InputFile(file_path))
+        os.remove(file_path)
     else:
         await update.message.reply_text("❌ Failed to download the song!")
 
