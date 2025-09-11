@@ -17,7 +17,7 @@ from telegram.constants import ChatAction
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # e.g., https://i-music.onrender.com/webhook
 DOWNLOAD_FOLDER = "downloads/"
-COOKIES_FILE = "cookiex.txt"  # <-- single cookies file in root
+COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")  # use Render env var or default
 
 # Ensure downloads folder exists
 if not os.path.exists(DOWNLOAD_FOLDER):
@@ -75,9 +75,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "quiet": True,
     }
 
-    # Use cookiex.txt if exists
+    # Use cookies if available
     if os.path.exists(COOKIES_FILE):
         ydl_opts["cookiefile"] = COOKIES_FILE
+    else:
+        await update.message.reply_text(
+            f"⚠️ Cookies file not found at '{COOKIES_FILE}'. "
+            "Some YouTube videos may fail to download."
+        )
 
     loop = asyncio.get_event_loop()
     file_path = None
