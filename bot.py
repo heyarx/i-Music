@@ -25,6 +25,7 @@ if not os.path.exists(DOWNLOAD_FOLDER):
 
 app = FastAPI()
 user_state = {}
+last_status_msg = {}  # Track last status message per user
 
 languages = [
     "English","Hindi","Spanish","French","German","Italian","Japanese",
@@ -53,8 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if i % 3 == 0:
             keyboard.append(row)
             row = []
-        # Animated effect: update every button dynamically
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05)  # Animated effect
         await msg.edit_text(f"🎵 Loading languages... {i}/{len(languages)}")
     if row:
         keyboard.append(row)
@@ -106,9 +106,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please start with /start first!")
         return
 
+    # Delete previous status message if exists
+    if user_id in last_status_msg:
+        try:
+            await last_status_msg[user_id].delete()
+        except:
+            pass
+        last_status_msg.pop(user_id)
+
     song_name = update.message.text
     fmt = user_state[user_id]["format"].lower()
+
+    # Send new status message
     status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
+    last_status_msg[user_id] = status_msg  # Track it
 
     ydl_opts = {
         "format": "bestaudio/best" if fmt=="audio" else "bestvideo+bestaudio",
@@ -117,7 +128,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "quiet": True,
     }
 
-    # Force MP3 for audio
     if fmt == "audio":
         ydl_opts.update({
             "postprocessors": [{
@@ -159,9 +169,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await download_task
     animation_task.cancel()
 
+    # Remove status message after sending file
+    try:
+        await status_msg.delete()
+        last_status_msg.pop(user_id, None)
+    except:
+        pass
+
     if file_path and os.path.exists(file_path):
         await update.message.reply_document(InputFile(file_path))
-        os.remove(file_path)
     else:
         await update.message.reply_text("❌ Failed to download the song!")
 
