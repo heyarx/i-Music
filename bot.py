@@ -2,7 +2,7 @@ import os
 import asyncio
 import yt_dlp
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Bot
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -17,7 +17,9 @@ from telegram.constants import ChatAction
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # e.g., https://i-music.onrender.com/webhook
 DOWNLOAD_FOLDER = "downloads/"
+COOKIES_FILE = "cookiex.txt"  # <-- single cookies file in root
 
+# Ensure downloads folder exists
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
@@ -63,16 +65,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     song_name = update.message.text
     fmt = user_state[user_id]["format"].lower()  # audio or video
 
-    # Initial status message
     status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
 
-    # ---------------- YT_DLP ----------------
+    # ---------------- YT_DLP OPTIONS ----------------
     ydl_opts = {
         "format": "bestaudio/best" if fmt=="audio" else "bestvideo+bestaudio",
         "outtmpl": f"{DOWNLOAD_FOLDER}/{song_name}.%(ext)s",
         "noplaylist": True,
         "quiet": True,
     }
+
+    # Use cookiex.txt if exists
+    if os.path.exists(COOKIES_FILE):
+        ydl_opts["cookiefile"] = COOKIES_FILE
 
     loop = asyncio.get_event_loop()
     file_path = None
@@ -123,7 +128,7 @@ async def startup():
     await bot_app.initialize()
     asyncio.create_task(bot_app.start())
 
-# ---------------- FASTAPI WEBHOOK ROUTE ----------------
+# ---------------- FASTAPI WEBHOOK ----------------
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
