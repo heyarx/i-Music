@@ -2,13 +2,20 @@ import os
 import asyncio
 import yt_dlp
 from fastapi import FastAPI, Request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, Bot
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+)
 from telegram.constants import ChatAction
 
 # ---------------- CONFIG ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://i-music.onrender.com/webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # e.g., https://i-music.onrender.com/webhook
 DOWNLOAD_FOLDER = "downloads/"
 
 if not os.path.exists(DOWNLOAD_FOLDER):
@@ -18,9 +25,11 @@ app = FastAPI()
 user_state = {}  # track user selections
 
 # 21 Languages
-languages = ["English","Hindi","Spanish","French","German","Italian","Japanese",
-             "Korean","Chinese","Portuguese","Russian","Arabic","Bengali","Turkish",
-             "Vietnamese","Thai","Malay","Swahili","Dutch","Greek","Hebrew"]
+languages = [
+    "English","Hindi","Spanish","French","German","Italian","Japanese",
+    "Korean","Chinese","Portuguese","Russian","Arabic","Bengali","Turkish",
+    "Vietnamese","Thai","Malay","Swahili","Dutch","Greek","Hebrew"
+]
 
 formats = ["Audio","Video"]
 
@@ -54,7 +63,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     song_name = update.message.text
     fmt = user_state[user_id]["format"].lower()  # audio or video
 
-    # Initial message
+    # Initial status message
     status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
 
     # ---------------- YT_DLP ----------------
@@ -70,11 +79,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     def download():
         nonlocal file_path
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{song_name}", download=True)
-            file_path = ydl.prepare_filename(info['entries'][0] if 'entries' in info else info)
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"ytsearch1:{song_name}", download=True)
+                file_path = ydl.prepare_filename(info['entries'][0] if 'entries' in info else info)
+        except Exception as e:
+            print(f"Download error: {e}")
 
-    # ---------------- Typing + Progress Simulation ----------------
+    # ---------------- Typing + Progress Animation ----------------
     async def typing_animation():
         dots = 0
         while not download_task.done():
@@ -86,7 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     download_task = loop.run_in_executor(None, download)
     animation_task = asyncio.create_task(typing_animation())
     await download_task
-    animation_task.cancel()  # stop typing animation
+    animation_task.cancel()
 
     # ---------------- Send File ----------------
     if file_path and os.path.exists(file_path):
@@ -96,22 +108,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Failed to download the song!")
 
 # ---------------- TELEGRAM APP ----------------
-async def setup_bot():
-    app_bot = ApplicationBuilder().token(BOT_TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CallbackQueryHandler(language_choice, pattern=r"^lang_"))
-    app_bot.add_handler(CallbackQueryHandler(format_choice, pattern=r"^fmt_"))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    # Set webhook automatically
-    await app_bot.bot.set_webhook(WEBHOOK_URL)
-    return app_bot
+bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
+bot_app.add_handler(CommandHandler("start", start))
+bot_app.add_handler(CallbackQueryHandler(language_choice, pattern=r"^lang_"))
+bot_app.add_handler(CallbackQueryHandler(format_choice, pattern=r"^fmt_"))
+bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# ---------------- FASTAPI ROUTE ----------------
+# ---------------- FASTAPI STARTUP ----------------
 @app.on_event("startup")
-async def on_startup():
-    global bot_app
-    bot_app = await setup_bot()
+async def startup():
+    # Set webhook
+    await bot_app.bot.set_webhook(WEBHOOK_URL)
+    # Initialize bot & start processing updates
+    await bot_app.initialize()
+    asyncio.create_task(bot_app.start())
 
+# ---------------- FASTAPI WEBHOOK ROUTE ----------------
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     data = await request.json()
