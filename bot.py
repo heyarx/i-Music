@@ -15,18 +15,17 @@ from telegram.constants import ChatAction
 
 # ---------------- CONFIG ----------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # e.g., https://i-music.onrender.com/webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 DOWNLOAD_FOLDER = "downloads/"
-COOKIES_FILE = os.getenv("COOKIES_FILE", "cookies.txt")  # use Render env var or default
+COOKIES_FILE = os.getenv("COOKIES_FILE", "cookiex.txt")  # fallback
 
 # Ensure downloads folder exists
 if not os.path.exists(DOWNLOAD_FOLDER):
     os.makedirs(DOWNLOAD_FOLDER)
 
 app = FastAPI()
-user_state = {}  # track user selections
+user_state = {}
 
-# 21 Languages
 languages = [
     "English","Hindi","Spanish","French","German","Italian","Japanese",
     "Korean","Chinese","Portuguese","Russian","Arabic","Bengali","Turkish",
@@ -35,27 +34,72 @@ languages = [
 
 formats = ["Audio","Video"]
 
-# ---------------- BOT HANDLERS ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[InlineKeyboardButton(lang, callback_data=f"lang_{lang}")] for lang in languages]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🎵 Welcome! Choose your language:", reply_markup=reply_markup)
+language_flags = {
+    "English": "🇬🇧", "Hindi": "🇮🇳", "Spanish": "🇪🇸", "French": "🇫🇷",
+    "German": "🇩🇪", "Italian": "🇮🇹", "Japanese": "🇯🇵", "Korean": "🇰🇷",
+    "Chinese": "🇨🇳", "Portuguese": "🇵🇹", "Russian": "🇷🇺", "Arabic": "🇸🇦",
+    "Bengali": "🇧🇩", "Turkish": "🇹🇷", "Vietnamese": "🇻🇳", "Thai": "🇹🇭",
+    "Malay": "🇲🇾", "Swahili": "🇰🇪", "Dutch": "🇳🇱", "Greek": "🇬🇷", "Hebrew": "🇮🇱"
+}
 
+# ---------------- START ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = await update.message.reply_text("🎵 Welcome! Loading languages...")
+    keyboard = []
+    row = []
+    for i, lang in enumerate(languages, 1):
+        button = InlineKeyboardButton(f"{language_flags[lang]} {lang}", callback_data=f"lang_{lang}")
+        row.append(button)
+        if i % 3 == 0:
+            keyboard.append(row)
+            row = []
+        # Animated effect: update every button dynamically
+        await asyncio.sleep(0.1)
+        await msg.edit_text(f"🎵 Loading languages... {i}/{len(languages)}")
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel")])
+    await msg.edit_text("🎵 Please select your language:")
+    await msg.edit_reply_markup(InlineKeyboardMarkup(keyboard))
+
+# ---------------- LANGUAGE SELECTION ----------------
 async def language_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     lang = query.data.split("_")[1]
+    if lang == "cancel":
+        await query.edit_message_text("❌ Operation canceled.")
+        return
     user_state[query.from_user.id] = {"language": lang}
-    keyboard = [[InlineKeyboardButton(fmt, callback_data=f"fmt_{fmt}")] for fmt in formats]
-    await query.edit_message_text(text=f"Language selected: {lang}\nChoose format:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await show_format_menu(query)
 
+async def show_format_menu(query):
+    keyboard = [
+        [
+            InlineKeyboardButton("🎧 Audio", callback_data="fmt_Audio"),
+            InlineKeyboardButton("🎬 Video", callback_data="fmt_Video")
+        ],
+        [InlineKeyboardButton("🔙 Back to Language", callback_data="back_language")]
+    ]
+    await query.edit_message_text(
+        text=f"Language selected: {user_state[query.from_user.id]['language']}\nChoose format:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# ---------------- FORMAT SELECTION ----------------
 async def format_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     fmt = query.data.split("_")[1]
+    if fmt == "back":
+        await start(query, context)
+        return
     user_state[query.from_user.id]["format"] = fmt
-    await query.edit_message_text(text=f"Format selected: {fmt}\nSend me the song name:")
+    await query.edit_message_text(
+        text=f"Format selected: {fmt}\nSend me the song name you want to download:"
+    )
 
+# ---------------- DOWNLOAD HANDLER ----------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id not in user_state or "format" not in user_state[user_id]:
@@ -63,11 +107,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     song_name = update.message.text
-    fmt = user_state[user_id]["format"].lower()  # audio or video
-
+    fmt = user_state[user_id]["format"].lower()
     status_msg = await update.message.reply_text(f"Preparing to download '{song_name}' as {fmt}... 🎵")
 
-    # ---------------- YT_DLP OPTIONS ----------------
     ydl_opts = {
         "format": "bestaudio/best" if fmt=="audio" else "bestvideo+bestaudio",
         "outtmpl": f"{DOWNLOAD_FOLDER}/{song_name}.%(ext)s",
@@ -75,14 +117,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "quiet": True,
     }
 
-    # Use cookies if available
+    # Force MP3 for audio
+    if fmt == "audio":
+        ydl_opts.update({
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }]
+        })
+
     if os.path.exists(COOKIES_FILE):
         ydl_opts["cookiefile"] = COOKIES_FILE
     else:
-        await update.message.reply_text(
-            f"⚠️ Cookies file not found at '{COOKIES_FILE}'. "
-            "Some YouTube videos may fail to download."
-        )
+        await update.message.reply_text(f"⚠️ Cookies file not found at '{COOKIES_FILE}'.")
 
     loop = asyncio.get_event_loop()
     file_path = None
@@ -93,10 +141,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(f"ytsearch1:{song_name}", download=True)
                 file_path = ydl.prepare_filename(info['entries'][0] if 'entries' in info else info)
+                if fmt=="audio":
+                    file_path = os.path.splitext(file_path)[0]+".mp3"
         except Exception as e:
             print(f"Download error: {e}")
 
-    # ---------------- Typing + Progress Animation ----------------
     async def typing_animation():
         dots = 0
         while not download_task.done():
@@ -110,7 +159,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await download_task
     animation_task.cancel()
 
-    # ---------------- Send File ----------------
     if file_path and os.path.exists(file_path):
         await update.message.reply_document(InputFile(file_path))
         os.remove(file_path)
@@ -120,16 +168,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ---------------- TELEGRAM APP ----------------
 bot_app = ApplicationBuilder().token(BOT_TOKEN).build()
 bot_app.add_handler(CommandHandler("start", start))
-bot_app.add_handler(CallbackQueryHandler(language_choice, pattern=r"^lang_"))
+bot_app.add_handler(CallbackQueryHandler(language_choice, pattern=r"^lang_|^cancel$|^back_language$"))
 bot_app.add_handler(CallbackQueryHandler(format_choice, pattern=r"^fmt_"))
 bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # ---------------- FASTAPI STARTUP ----------------
 @app.on_event("startup")
 async def startup():
-    # Set webhook
     await bot_app.bot.set_webhook(WEBHOOK_URL)
-    # Initialize bot & start processing updates
     await bot_app.initialize()
     asyncio.create_task(bot_app.start())
 
