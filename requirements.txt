@@ -1,0 +1,5 @@
+python-telegram-bot==20.3
+fastapi==0.111.0
+uvicorn==0.23.2
+yt-dlp==2025.9.6
+aiofiles
